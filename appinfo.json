@@ -1,0 +1,54 @@
+{
+    "appKeys": {},
+    "capabilities": [
+        "configurable"
+    ],
+    "companyName": "Orviwan",
+    "longName": "Remote Worker",
+    "projectType": "native",
+    "resources": {
+        "media": [
+            {
+                "characterRegex": "[0-9:]",
+                "file": "fonts/IMAGINE",
+                "name": "FONT_IMAGINE_48",
+                "targetPlatforms": null,
+                "trackingAdjust": -2,
+                "type": "font"
+            },
+            {
+                "characterRegex": "[0-9: \\- a-zA-Z]",
+                "file": "fonts/IMAGINE",
+                "name": "FONT_IMAGINE_24",
+                "targetPlatforms": null,
+                "type": "font"
+            },
+            {
+                "characterRegex": "[0-9:]",
+                "file": "fonts/IMAGINE",
+                "name": "FONT_IMAGINE_40",
+                "targetPlatforms": null,
+                "type": "font"
+            },
+            {
+                "characterRegex": "[0-9: \\- a-zA-Z]",
+                "file": "fonts/IMAGINE",
+                "name": "FONT_IMAGINE_18",
+                "targetPlatforms": null,
+                "type": "font"
+            }
+        ]
+    },
+    "sdkVersion": "3",
+    "shortName": "Remote Worker",
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk"
+    ],
+    "uuid": "6979fbf5-de76-4a11-964f-af7138931068",
+    "versionLabel": "1.0",
+    "watchapp": {
+        "watchface": true
+    }
+}
