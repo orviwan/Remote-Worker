@@ -1,5 +1,13 @@
 {
-    "appKeys": {},
+    "appKeys": {
+        "BACKGROUND_KEY": 0,
+        "LOCALTIME_KEY": 1,
+        "REMOTETIME_KEY": 2,
+        "DAY_KEY": 3,
+        "DATE_KEY": 4,
+        "OFFSET_KEY": 5,
+        "LABEL_KEY": 6
+    },
     "capabilities": [
         "configurable"
     ],
