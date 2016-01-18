@@ -1,9 +1,9 @@
 Pebble.addEventListener('ready', function() {
-  console.log('PebbleKit JS ready!');
+  //console.log('PebbleKit JS ready!');
 });
 
 Pebble.addEventListener('showConfiguration', function() {
-  var url = 'http://9ecdf39b.ngrok.io/index.html';
+  var url = 'http://www.mirz.com/RemoteWorker/index.html';
   Pebble.openURL(url);
 });
 
@@ -21,8 +21,8 @@ Pebble.addEventListener('webviewclosed', function(e) {
 
   // Send to watchapp
   Pebble.sendAppMessage(dict, function() {
-    console.log('Send successful: ' + JSON.stringify(dict));
+    //console.log('Send successful: ' + JSON.stringify(dict));
   }, function() {
-    console.log('Send failed!');
+    c//onsole.log('Send failed!');
   });
 });

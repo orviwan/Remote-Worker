@@ -4,8 +4,10 @@
 static Window *s_window;
 static Layer *s_window_layer;
 TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer;
-static time_t offset_seconds = 0;
 AppSettings settings;
+static char s_time_buffer[] = "00:00";
+static char s_time_buffer2[] = "00:00";
+static char s_time_buffer3[] = "XXXXX: 00:00";
 
 void settings_load() {
 	settings.Background = GColorRed;
@@ -14,8 +16,6 @@ void settings_load() {
 	settings.Day = GColorWhite;
 	settings.Date = GColorWhite;
 	settings.Offset = 0;
-	//settings.Label[] = "";
-	snprintf(settings.Label, sizeof(settings.Label), "YYYY");
 
   persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
 }
@@ -48,7 +48,12 @@ void settings_process_tuple(Tuple *new_tuple) {
 			break;
 		case OFFSET_KEY:
 			settings.Offset = new_tuple->value->int32;
-			offset_seconds = settings.Offset;
+			if(settings.Offset != 0) {
+				layer_set_hidden(text_layer_get_layer(remote_time_layer), false);
+			}
+			else {
+				layer_set_hidden(text_layer_get_layer(remote_time_layer), true);
+			}
 			force_tick();
 			break;
 		case LABEL_KEY:
@@ -80,20 +85,26 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     text_layer_set_text(date_layer, s_date_buffer);
   }
   if (units_changed & MINUTE_UNIT) {
-    static char s_time_buffer[] = "00:00";
     strftime(s_time_buffer, sizeof(s_time_buffer), clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(local_time_layer, s_time_buffer);
 
-		static char s_time_buffer2[] = "00:00";
-		static char s_time_buffer3[] = "XXXXX: 00:00";
-		time_t now_seconds = mktime(tick_time);
-		struct tm *tm_utc = gmtime(&now_seconds);
-		time_t utc_seconds = mktime(tm_utc);
-		time_t seconds = utc_seconds + offset_seconds;
-		struct tm *tm_remote = localtime(&seconds);
-    strftime(s_time_buffer2, sizeof(s_time_buffer2), clock_is_24h_style() ? "%H:%M" : "%I:%M", tm_remote);
-		snprintf(s_time_buffer3, sizeof(s_time_buffer3), "%s: %s", settings.Label, s_time_buffer2);
-    text_layer_set_text(remote_time_layer, s_time_buffer3);
+		if(settings.Offset != 0) {
+			/*
+
+			struct tm *tm_utc = gmtime(&now_seconds);
+			time_t utc_seconds = mktime(tm_utc);
+			time_t seconds = utc_seconds + settings.Offset;
+			struct tm *tm_remote = localtime(&seconds);
+			*/
+
+			time_t now_seconds = mktime(tick_time);
+			now_seconds += settings.Offset;
+			struct tm *tm_remote = gmtime(&now_seconds);
+			
+	    strftime(s_time_buffer2, sizeof(s_time_buffer2), clock_is_24h_style() ? "%H:%M" : "%I:%M", tm_remote);
+			snprintf(s_time_buffer3, sizeof(s_time_buffer3), "%s: %s", settings.Label, s_time_buffer2);
+	    text_layer_set_text(remote_time_layer, s_time_buffer3);
+		}
   }
 }
 
