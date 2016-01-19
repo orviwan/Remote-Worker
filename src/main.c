@@ -3,11 +3,13 @@
 
 static Window *s_window;
 static Layer *s_window_layer;
-TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer;
+TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer, *steps_layer, *sleep_layer;
 AppSettings settings;
 static char s_time_buffer[] = "00:00";
 static char s_time_buffer2[] = "00:00";
 static char s_time_buffer3[] = "XXXXX: 00:00";
+static char s_steps_buffer[] = "Steps: 1234567890";
+static char s_sleep_buffer[] = "Sleep: 1234567890";
 
 void settings_load() {
 	settings.Background = GColorRed;
@@ -48,12 +50,7 @@ void settings_process_tuple(Tuple *new_tuple) {
 			break;
 		case OFFSET_KEY:
 			settings.Offset = new_tuple->value->int32;
-			if(settings.Offset != 0) {
-				layer_set_hidden(text_layer_get_layer(remote_time_layer), false);
-			}
-			else {
-				layer_set_hidden(text_layer_get_layer(remote_time_layer), true);
-			}
+			layer_set_hidden(text_layer_get_layer(remote_time_layer), false);
 			force_tick();
 			break;
 		case LABEL_KEY:
@@ -88,7 +85,7 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     strftime(s_time_buffer, sizeof(s_time_buffer), clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(local_time_layer, s_time_buffer);
 
-		if(settings.Offset != 0) {
+		//if(settings.Offset != 0) {
 			/*
 
 			struct tm *tm_utc = gmtime(&now_seconds);
@@ -100,11 +97,11 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 			time_t now_seconds = mktime(tick_time);
 			now_seconds += settings.Offset;
 			struct tm *tm_remote = gmtime(&now_seconds);
-			
+
 	    strftime(s_time_buffer2, sizeof(s_time_buffer2), clock_is_24h_style() ? "%H:%M" : "%I:%M", tm_remote);
 			snprintf(s_time_buffer3, sizeof(s_time_buffer3), "%s: %s", settings.Label, s_time_buffer2);
 	    text_layer_set_text(remote_time_layer, s_time_buffer3);
-		}
+		//}
   }
 }
 
@@ -114,12 +111,35 @@ void force_tick() {
 	handle_tick(tick_time, DAY_UNIT|MINUTE_UNIT);
 }
 
+
+static void health_handler(HealthEventType event, void *context) {
+  if (event == HealthEventMovementUpdate) {
+    const uint32_t steps_today = health_service_sum_today(HealthMetricStepCount);
+		snprintf(s_steps_buffer, sizeof(s_steps_buffer), "Steps: %li", steps_today);
+		text_layer_set_text(steps_layer, s_steps_buffer);
+  } else if (event == HealthEventSleepUpdate) {
+    const uint32_t seconds_sleep_today = health_service_sum_today(HealthMetricSleepSeconds);
+    const uint32_t seconds_restful_sleep_today = health_service_sum_today(HealthMetricSleepRestfulSeconds);
+		snprintf(s_sleep_buffer, sizeof(s_sleep_buffer), "Sleep: %li", seconds_sleep_today);
+		text_layer_set_text(sleep_layer, s_sleep_buffer);
+  }
+}
+
 void main_window_load(Window *window) {
 	settings_load();
+
+	//light_enable(true);
 
 	window_set_background_color(s_window, settings.Background);
 
 	setlocale(LC_ALL, "");
+
+	steps_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(12, 7), PBL_IF_ROUND_ELSE(181, 145), 40));
+	text_layer_set_text_color(steps_layer, GColorWhite);
+	text_layer_set_background_color(steps_layer, GColorClear);
+	text_layer_set_font(steps_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
+	text_layer_set_text_alignment(steps_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
+	//layer_add_child(s_window_layer, text_layer_get_layer(steps_layer));
 
 	remote_time_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(42, 37), PBL_IF_ROUND_ELSE(181, 145), 40));
 	text_layer_set_text_color(remote_time_layer, settings.RemoteTime);
@@ -149,6 +169,18 @@ void main_window_load(Window *window) {
 	text_layer_set_text_alignment(date_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
 	layer_add_child(s_window_layer, text_layer_get_layer(date_layer));
 
+	sleep_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(147, 143), PBL_IF_ROUND_ELSE(181, 145), 40));
+	text_layer_set_text_color(sleep_layer, GColorWhite);
+	text_layer_set_background_color(sleep_layer, GColorClear);
+	text_layer_set_font(sleep_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
+	text_layer_set_text_alignment(sleep_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
+	//layer_add_child(s_window_layer, text_layer_get_layer(sleep_layer));
+
+  /* health_service_events_subscribe(health_handler, NULL);
+	health_service_peek_current_activities();
+	health_handler(HealthEventMovementUpdate, NULL);
+	health_handler(HealthEventSleepUpdate, NULL); */
+
 	force_tick();
 
   tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
@@ -158,10 +190,14 @@ void main_window_load(Window *window) {
 void main_window_unload(Window *window) {
 	tick_timer_service_unsubscribe();
 
+	health_service_events_unsubscribe();
+
   text_layer_destroy(local_time_layer);
   text_layer_destroy(day_layer);
   text_layer_destroy(date_layer);
   text_layer_destroy(remote_time_layer);
+  text_layer_destroy(steps_layer);
+  text_layer_destroy(sleep_layer);
 }
 
 
