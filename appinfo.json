@@ -9,7 +9,8 @@
         "LABEL_KEY": 6
     },
     "capabilities": [
-        "configurable"
+        "configurable",
+        "health"
     ],
     "companyName": "Orviwan",
     "longName": "Remote Worker",

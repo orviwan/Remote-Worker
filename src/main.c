@@ -85,14 +85,6 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     strftime(s_time_buffer, sizeof(s_time_buffer), clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(local_time_layer, s_time_buffer);
 
-		//if(settings.Offset != 0) {
-			/*
-
-			struct tm *tm_utc = gmtime(&now_seconds);
-			time_t utc_seconds = mktime(tm_utc);
-			time_t seconds = utc_seconds + settings.Offset;
-			struct tm *tm_remote = localtime(&seconds);
-			*/
 
 			time_t now_seconds = mktime(tick_time);
 			now_seconds += settings.Offset;
@@ -101,8 +93,24 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 	    strftime(s_time_buffer2, sizeof(s_time_buffer2), clock_is_24h_style() ? "%H:%M" : "%I:%M", tm_remote);
 			snprintf(s_time_buffer3, sizeof(s_time_buffer3), "%s: %s", settings.Label, s_time_buffer2);
 	    text_layer_set_text(remote_time_layer, s_time_buffer3);
-		//}
+
   }
+
+
+	time_t now = time(NULL);
+	time_t start = clock_to_timestamp(TODAY, tick_time->tm_hour - 5,
+																		tick_time->tm_min);
+
+	// Check data is available
+	HealthServiceAccessibilityMask result = health_service_metric_accessible(HealthMetricStepCount, start, now);
+	if(result == HealthServiceAccessibilityMaskAvailable) {
+		APP_LOG(APP_LOG_LEVEL_INFO, "Available");
+	}
+	else {
+		APP_LOG(APP_LOG_LEVEL_ERROR, "No data available!");
+	}
+
+	APP_LOG(APP_LOG_LEVEL_INFO, "HealthServiceAccessibilityMaskAvailable: %d", result);
 }
 
 void force_tick() {
@@ -139,7 +147,7 @@ void main_window_load(Window *window) {
 	text_layer_set_background_color(steps_layer, GColorClear);
 	text_layer_set_font(steps_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
 	text_layer_set_text_alignment(steps_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
-	//layer_add_child(s_window_layer, text_layer_get_layer(steps_layer));
+	layer_add_child(s_window_layer, text_layer_get_layer(steps_layer));
 
 	remote_time_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(42, 37), PBL_IF_ROUND_ELSE(181, 145), 40));
 	text_layer_set_text_color(remote_time_layer, settings.RemoteTime);
@@ -174,12 +182,12 @@ void main_window_load(Window *window) {
 	text_layer_set_background_color(sleep_layer, GColorClear);
 	text_layer_set_font(sleep_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
 	text_layer_set_text_alignment(sleep_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
-	//layer_add_child(s_window_layer, text_layer_get_layer(sleep_layer));
+	layer_add_child(s_window_layer, text_layer_get_layer(sleep_layer));
 
-  /* health_service_events_subscribe(health_handler, NULL);
+	health_service_events_subscribe(health_handler, NULL);
 	health_service_peek_current_activities();
 	health_handler(HealthEventMovementUpdate, NULL);
-	health_handler(HealthEventSleepUpdate, NULL); */
+	health_handler(HealthEventSleepUpdate, NULL);
 
 	force_tick();
 
