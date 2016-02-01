@@ -6,7 +6,9 @@
         "DAY_KEY": 3,
         "DATE_KEY": 4,
         "OFFSET_KEY": 5,
-        "LABEL_KEY": 6
+        "LABEL_KEY": 6,
+        "DISPLAYMODE_KEY": 7,
+        "DISPLAYDATA_KEY": 8
     },
     "capabilities": [
         "configurable",
@@ -26,7 +28,7 @@
                 "type": "font"
             },
             {
-                "characterRegex": "[0-9: \\- a-zA-Z.]",
+                "characterRegex": "[0-9: \\- a-zA-Z.%%]",
                 "file": "fonts/IMAGINE",
                 "name": "FONT_IMAGINE_24",
                 "targetPlatforms": null,
@@ -40,7 +42,7 @@
                 "type": "font"
             },
             {
-                "characterRegex": "[0-9: \\- a-zA-Z.]",
+                "characterRegex": "[0-9: \\- a-zA-Z.%%{+=}]",
                 "file": "fonts/IMAGINE",
                 "name": "FONT_IMAGINE_18",
                 "targetPlatforms": null,

@@ -3,13 +3,21 @@
 
 static Window *s_window;
 static Layer *s_window_layer;
-TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer, *steps_layer, *sleep_layer;
+TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer, *data_layer;
+static uint8_t s_state = 0;
+static uint8_t s_max_state = 6;
+static uint8_t s_timer = 10;
+
 AppSettings settings;
 static char s_time_buffer[] = "00:00";
 static char s_time_buffer2[] = "00:00";
 static char s_time_buffer3[] = "XXXXX: 00:00";
-static char s_steps_buffer[] = "Steps: 1234567890";
-static char s_sleep_buffer[] = "Sleep: 1234567890";
+static char s_data_buffer[20];
+
+static bool s_battery_charging = false;
+static uint8_t s_battery_percent = 0;
+
+static HealthValue s_sleep, s_deep_sleep, s_steps, s_active, s_distance;
 
 void settings_load() {
 	settings.Background = GColorRed;
@@ -18,6 +26,7 @@ void settings_load() {
 	settings.Day = GColorWhite;
 	settings.Date = GColorWhite;
 	settings.Offset = 0;
+	settings.DisplayMode = DISPLAYMODE_NONE;
 
   persist_read_data(SETTINGS_KEY, &settings, sizeof(settings));
 }
@@ -57,6 +66,10 @@ void settings_process_tuple(Tuple *new_tuple) {
 			snprintf(settings.Label, sizeof(settings.Label), new_tuple->value->cstring);
 			force_tick();
 			break;
+		case DISPLAYMODE_KEY:
+			settings.DisplayMode = new_tuple->value->int32;
+			force_tick();
+			break;
   }
 }
 
@@ -71,10 +84,20 @@ void inbox_received_handler(DictionaryIterator *iter, void *context) {
 	settings_save();
 }
 
+void battery_update(BatteryChargeState charge_state) {
+  s_battery_percent = charge_state.charge_percent;
+  s_battery_charging = charge_state.is_charging;
+  if(s_battery_percent==0) {
+    s_battery_percent=1;
+  }
+	s_state = 5;
+	update_display();
+}
+
 void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   if (units_changed & DAY_UNIT) {
 		static char s_day_buffer[20];
-		strftime(s_day_buffer, sizeof(s_day_buffer), "%d %a", tick_time);
+		strftime(s_day_buffer, sizeof(s_day_buffer), "%a %d", tick_time);
     text_layer_set_text(day_layer, s_day_buffer);
 
     static char s_date_buffer[20];
@@ -85,52 +108,143 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     strftime(s_time_buffer, sizeof(s_time_buffer), clock_is_24h_style() ? "%H:%M" : "%I:%M", tick_time);
     text_layer_set_text(local_time_layer, s_time_buffer);
 
+		if(settings.Label[0] != '\0') {
 
 			time_t now_seconds = mktime(tick_time);
+
+			//APP_LOG(APP_LOG_LEVEL_DEBUG, "offset seconds: %ld", settings.Offset);
+			//APP_LOG(APP_LOG_LEVEL_DEBUG, "now seconds: %d", (int)now_seconds);
+
 			now_seconds += settings.Offset;
 			struct tm *tm_remote = gmtime(&now_seconds);
 
 	    strftime(s_time_buffer2, sizeof(s_time_buffer2), clock_is_24h_style() ? "%H:%M" : "%I:%M", tm_remote);
 			snprintf(s_time_buffer3, sizeof(s_time_buffer3), "%s: %s", settings.Label, s_time_buffer2);
 	    text_layer_set_text(remote_time_layer, s_time_buffer3);
+		}
+		else {
+			text_layer_set_text(remote_time_layer, NULL);
+		}
 
   }
-
-
-	time_t now = time(NULL);
-	time_t start = clock_to_timestamp(TODAY, tick_time->tm_hour - 5,
-																		tick_time->tm_min);
-
-	// Check data is available
-	HealthServiceAccessibilityMask result = health_service_metric_accessible(HealthMetricStepCount, start, now);
-	if(result == HealthServiceAccessibilityMaskAvailable) {
-		APP_LOG(APP_LOG_LEVEL_INFO, "Available");
+	s_timer--;
+	if (units_changed & SECOND_UNIT) {
+		if(s_timer==0 && DISPLAYMODE_AUTO) {
+			switch_state();
+			s_timer = 10;
+		}
 	}
-	else {
-		APP_LOG(APP_LOG_LEVEL_ERROR, "No data available!");
-	}
-
-	APP_LOG(APP_LOG_LEVEL_INFO, "HealthServiceAccessibilityMaskAvailable: %d", result);
 }
 
 void force_tick() {
 	time_t now = time(NULL);
 	struct tm *tick_time = localtime(&now);
-	handle_tick(tick_time, DAY_UNIT|MINUTE_UNIT);
+	handle_tick(tick_time, DAY_UNIT|MINUTE_UNIT|SECOND_UNIT);
 }
 
+void duration_to_time(int duration_s, int *hours, int *minutes) {
+  *hours = (duration_s / 3600) ?: 0;
+  *minutes = ((duration_s % 3600) / 60) ?: 0;
+}
 
-static void health_handler(HealthEventType event, void *context) {
-  if (event == HealthEventMovementUpdate) {
-    const uint32_t steps_today = health_service_sum_today(HealthMetricStepCount);
-		snprintf(s_steps_buffer, sizeof(s_steps_buffer), "Steps: %li", steps_today);
-		text_layer_set_text(steps_layer, s_steps_buffer);
-  } else if (event == HealthEventSleepUpdate) {
-    const uint32_t seconds_sleep_today = health_service_sum_today(HealthMetricSleepSeconds);
-    const uint32_t seconds_restful_sleep_today = health_service_sum_today(HealthMetricSleepRestfulSeconds);
-		snprintf(s_sleep_buffer, sizeof(s_sleep_buffer), "Sleep: %li", seconds_sleep_today);
-		text_layer_set_text(sleep_layer, s_sleep_buffer);
+void number_to_fraction(int numerator, int* whole_part, int *decimal_part) {
+  *whole_part = numerator / 1000;
+  *decimal_part = (numerator - ((numerator / 1000) * 1000)) / 10;
+}
+
+void update_display() {
+	if(DISPLAYMODE_NONE) {
+		return;
+	}
+	int hours = 0, minutes = 0;
+	int who = 0, dec = 0;
+	switch(s_state) {
+			case 0:
+				//steps
+				snprintf(s_data_buffer, sizeof(s_data_buffer), "step %li", s_steps);
+				break;
+			case 1:
+				//s_distance
+	      number_to_fraction(s_distance, &who, &dec);
+				snprintf(s_data_buffer, sizeof(s_data_buffer), "dist %d.%dkm", who, dec);
+				break;
+			case 2:
+				//active
+				duration_to_time(s_active, &hours, &minutes);
+				if(hours>0) {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "act. %dH %dM", hours, minutes);
+				}
+				else {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "active %dM", minutes);
+				}
+				break;
+			case 3:
+				//sleep
+				duration_to_time(s_sleep, &hours, &minutes);
+				if(hours>0) {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "zzz %dH %dM", hours, minutes);
+				}
+				else {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "zzz %dM", minutes);
+				}
+				break;
+			case 4:
+				//deep
+				duration_to_time(s_deep_sleep, &hours, &minutes);
+				if(hours>0) {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "deep %dH %dM", hours, minutes);
+				}
+				else {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "deep %dM", minutes);
+				}
+				break;
+
+			case 5:
+				//battery
+				if(s_battery_charging) {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "{+} %d%%", s_battery_percent);
+				}
+				else {
+					snprintf(s_data_buffer, sizeof(s_data_buffer), "{=} %d%%", s_battery_percent);
+				}
+				break;
+	}
+	text_layer_set_text(data_layer, s_data_buffer);
+}
+
+void switch_state() {
+	s_timer = 10;
+	s_state++;
+	if(s_state>=s_max_state) {
+		s_state = 0;
+	}
+	update_display();
+}
+
+void tap_handler(AccelAxisType axis, int32_t direction) {
+	switch (axis) {
+		case ACCEL_AXIS_Z:
+		case ACCEL_AXIS_X:
+			break;
+	  case ACCEL_AXIS_Y:
+			switch_state();
+	    break;
   }
+}
+
+void health_handler(HealthEventType event, void *context) {
+	if(DISPLAYMODE_NONE) {
+		return;
+	}
+  if (event == HealthEventMovementUpdate) {
+    s_steps = health_service_sum_today(HealthMetricStepCount);
+		s_distance = health_service_sum_today(HealthMetricWalkedDistanceMeters);
+		s_active = health_service_sum_today(HealthMetricActiveSeconds);
+  } else if (event == HealthEventSleepUpdate) {
+    s_sleep = health_service_sum_today(HealthMetricSleepSeconds);
+    s_deep_sleep = health_service_sum_today(HealthMetricSleepRestfulSeconds);
+  }
+	update_display();
 }
 
 void main_window_load(Window *window) {
@@ -141,13 +255,6 @@ void main_window_load(Window *window) {
 	window_set_background_color(s_window, settings.Background);
 
 	setlocale(LC_ALL, "");
-
-	steps_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(12, 7), PBL_IF_ROUND_ELSE(181, 145), 40));
-	text_layer_set_text_color(steps_layer, GColorWhite);
-	text_layer_set_background_color(steps_layer, GColorClear);
-	text_layer_set_font(steps_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
-	text_layer_set_text_alignment(steps_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
-	layer_add_child(s_window_layer, text_layer_get_layer(steps_layer));
 
 	remote_time_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(42, 37), PBL_IF_ROUND_ELSE(181, 145), 40));
 	text_layer_set_text_color(remote_time_layer, settings.RemoteTime);
@@ -177,37 +284,42 @@ void main_window_load(Window *window) {
 	text_layer_set_text_alignment(date_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
 	layer_add_child(s_window_layer, text_layer_get_layer(date_layer));
 
-	sleep_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(147, 143), PBL_IF_ROUND_ELSE(181, 145), 40));
-	text_layer_set_text_color(sleep_layer, GColorWhite);
-	text_layer_set_background_color(sleep_layer, GColorClear);
-	text_layer_set_font(sleep_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
-	text_layer_set_text_alignment(sleep_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
-	layer_add_child(s_window_layer, text_layer_get_layer(sleep_layer));
+	data_layer = text_layer_create(GRect(0, PBL_IF_ROUND_ELSE(148, 144), PBL_IF_ROUND_ELSE(181, 145), 40));
+	text_layer_set_text_color(data_layer, GColorWhite);
+	text_layer_set_background_color(data_layer, GColorClear);
+	text_layer_set_font(data_layer, fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_IMAGINE_18)));
+	text_layer_set_text_alignment(data_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
+	layer_add_child(s_window_layer, text_layer_get_layer(data_layer));
 
 	health_service_events_subscribe(health_handler, NULL);
-	health_service_peek_current_activities();
 	health_handler(HealthEventMovementUpdate, NULL);
 	health_handler(HealthEventSleepUpdate, NULL);
 
-	force_tick();
+	battery_update(battery_state_service_peek());
+	battery_state_service_subscribe(&battery_update);
 
-  tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
+	force_tick();
+  tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+
+	if(!DISPLAYMODE_NONE) {
+		accel_tap_service_subscribe(tap_handler);
+		update_display();
+	}
 
 }
 
 void main_window_unload(Window *window) {
 	tick_timer_service_unsubscribe();
-
 	health_service_events_unsubscribe();
+	accel_tap_service_unsubscribe();
+	battery_state_service_unsubscribe();
 
   text_layer_destroy(local_time_layer);
   text_layer_destroy(day_layer);
   text_layer_destroy(date_layer);
   text_layer_destroy(remote_time_layer);
-  text_layer_destroy(steps_layer);
-  text_layer_destroy(sleep_layer);
+  text_layer_destroy(data_layer);
 }
-
 
 void handle_init(void) {
   s_window = window_create();

@@ -136,7 +136,7 @@
       "RemoteTime": $('#RemoteTime').val().replace(/^#/, '0x'),
       "Day": $('#Day').val().replace(/^#/, '0x'),
       "Date": $('#Date').val().replace(/^#/, '0x'),
-      "Offset": aTimezone[0],
+      "Offset": parseInt(aTimezone[0]),
       "Label": aTimezone[1],
       "TimezoneName": $('#Timezone option[value="'+$('#Timezone').val()+'"]').html()
     };
