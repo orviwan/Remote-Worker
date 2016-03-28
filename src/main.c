@@ -5,7 +5,12 @@ static Window *s_window;
 static Layer *s_window_layer;
 TextLayer *local_time_layer, *remote_time_layer, *day_layer, *date_layer, *data_layer;
 static uint8_t s_state = 0;
-static uint8_t s_max_state = 6;
+
+#if defined (PBL_HEALTH)
+	static uint8_t s_max_state = 6;
+#else
+	static uint8_t s_max_state = 1;
+#endif
 static uint8_t s_timer = 10;
 
 AppSettings settings;
@@ -20,11 +25,12 @@ static uint8_t s_battery_percent = 0;
 static HealthValue s_sleep, s_deep_sleep, s_steps, s_active, s_distance;
 
 void settings_load() {
-	settings.Background = GColorRed;
+	settings.Background = GColorBlack;
 	settings.LocalTime = GColorWhite;
 	settings.RemoteTime = GColorLightGray;
 	settings.Day = GColorWhite;
 	settings.Date = GColorWhite;
+	settings.Data = GColorWhite;
 	settings.Offset = 0;
 	settings.DisplayMode = DISPLAYMODE_NONE;
 
@@ -57,6 +63,10 @@ void settings_process_tuple(Tuple *new_tuple) {
 			settings.Date.argb = GColorFromHEX(new_tuple->value->int32).argb;
 			text_layer_set_text_color(date_layer, settings.Date);
 			break;
+		case DATA_KEY:
+			settings.Data.argb = GColorFromHEX(new_tuple->value->int32).argb;
+			text_layer_set_text_color(data_layer, settings.Data);
+			break;
 		case OFFSET_KEY:
 			settings.Offset = new_tuple->value->int32;
 			layer_set_hidden(text_layer_get_layer(remote_time_layer), false);
@@ -68,6 +78,14 @@ void settings_process_tuple(Tuple *new_tuple) {
 			break;
 		case DISPLAYMODE_KEY:
 			settings.DisplayMode = new_tuple->value->int32;
+			if(settings.DisplayMode == DISPLAYMODE_NONE) {
+				layer_set_hidden(text_layer_get_layer(data_layer), true);
+				accel_tap_service_unsubscribe();
+			} else {
+				layer_set_hidden(text_layer_get_layer(data_layer), false);
+				accel_tap_service_subscribe(tap_handler);
+				update_display();
+			}
 			force_tick();
 			break;
   }
@@ -91,6 +109,7 @@ void battery_update(BatteryChargeState charge_state) {
     s_battery_percent=1;
   }
 	s_state = 5;
+	s_timer = 10;
 	update_display();
 }
 
@@ -127,19 +146,22 @@ void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 		}
 
   }
-	s_timer--;
+
+	/*
 	if (units_changed & SECOND_UNIT) {
+		s_timer--;
 		if(s_timer==0 && DISPLAYMODE_AUTO) {
 			switch_state();
 			s_timer = 10;
 		}
 	}
+	*/
 }
 
 void force_tick() {
 	time_t now = time(NULL);
 	struct tm *tick_time = localtime(&now);
-	handle_tick(tick_time, DAY_UNIT|MINUTE_UNIT|SECOND_UNIT);
+	handle_tick(tick_time, DAY_UNIT|MINUTE_UNIT);
 }
 
 void duration_to_time(int duration_s, int *hours, int *minutes) {
@@ -153,7 +175,7 @@ void number_to_fraction(int numerator, int* whole_part, int *decimal_part) {
 }
 
 void update_display() {
-	if(DISPLAYMODE_NONE) {
+	if(settings.DisplayMode == DISPLAYMODE_NONE) {
 		return;
 	}
 	int hours = 0, minutes = 0;
@@ -210,6 +232,7 @@ void update_display() {
 				break;
 	}
 	text_layer_set_text(data_layer, s_data_buffer);
+	layer_mark_dirty(text_layer_get_layer(data_layer));
 }
 
 void switch_state() {
@@ -233,14 +256,15 @@ void tap_handler(AccelAxisType axis, int32_t direction) {
 }
 
 void health_handler(HealthEventType event, void *context) {
-	if(DISPLAYMODE_NONE) {
+	if(settings.DisplayMode == DISPLAYMODE_NONE) {
 		return;
 	}
-  if (event == HealthEventMovementUpdate) {
+  if (event != HealthEventSleepUpdate) {
     s_steps = health_service_sum_today(HealthMetricStepCount);
 		s_distance = health_service_sum_today(HealthMetricWalkedDistanceMeters);
 		s_active = health_service_sum_today(HealthMetricActiveSeconds);
-  } else if (event == HealthEventSleepUpdate) {
+  }
+	if (event != HealthEventMovementUpdate) {
     s_sleep = health_service_sum_today(HealthMetricSleepSeconds);
     s_deep_sleep = health_service_sum_today(HealthMetricSleepRestfulSeconds);
   }
@@ -291,17 +315,19 @@ void main_window_load(Window *window) {
 	text_layer_set_text_alignment(data_layer, PBL_IF_ROUND_ELSE(GTextAlignmentCenter, GTextAlignmentRight));
 	layer_add_child(s_window_layer, text_layer_get_layer(data_layer));
 
-	health_service_events_subscribe(health_handler, NULL);
-	health_handler(HealthEventMovementUpdate, NULL);
-	health_handler(HealthEventSleepUpdate, NULL);
+	#if defined (PBL_HEALTH)
+		health_service_events_subscribe(health_handler, NULL);
+		health_handler(HealthEventMovementUpdate, NULL);
+		health_handler(HealthEventSleepUpdate, NULL);
+	#endif
 
 	battery_update(battery_state_service_peek());
 	battery_state_service_subscribe(&battery_update);
 
 	force_tick();
-  tick_timer_service_subscribe(SECOND_UNIT, handle_tick);
+  tick_timer_service_subscribe(MINUTE_UNIT, handle_tick);
 
-	if(!DISPLAYMODE_NONE) {
+	if(settings.DisplayMode != DISPLAYMODE_NONE) {
 		accel_tap_service_subscribe(tap_handler);
 		update_display();
 	}
@@ -310,7 +336,9 @@ void main_window_load(Window *window) {
 
 void main_window_unload(Window *window) {
 	tick_timer_service_unsubscribe();
-	health_service_events_unsubscribe();
+	#if defined (PBL_HEALTH)
+		health_service_events_unsubscribe();
+	#endif
 	accel_tap_service_unsubscribe();
 	battery_state_service_unsubscribe();
 
@@ -333,7 +361,7 @@ void handle_init(void) {
   window_stack_push(s_window, true);
 
 	app_message_register_inbox_received(inbox_received_handler);
-	app_message_open(128, 128);
+	app_message_open(256, 256);
 }
 
 void handle_deinit(void) {

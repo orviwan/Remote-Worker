@@ -29,6 +29,20 @@
     </div>
 
     <div class="item-container">
+      <div class="item-container-header">Data Row</div>
+      <div class="item-container-content">
+        <div class='item'>
+          <small>Health data (if available) and battery level. Flick your wrist to cycle values.</small>
+        </div>
+        <label class="item" style="min-height:26px;">
+          <select id="DisplayMode" dir="rtl" class="item-select">
+            <option value="0">None</option>
+            <option value="1">Enabled</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="item-container">
       <div class="item-container-header">Remote Timezone</div>
       <div class="item-container-content">
         <label class="item" style="min-height:26px;">
@@ -69,6 +83,12 @@
         <label class="item">
           Date Color
           <input id="Date" type="text" class="item-color item-color-sunny" value="#FFFFFF">
+        </label>
+      </div>
+      <div class="item-container-content">
+        <label class="item">
+          Data Color
+          <input id="Data" type="text" class="item-color item-color-sunny" value="#FFFFFF">
         </label>
       </div>
     </div>
@@ -118,29 +138,37 @@
     catch(ex) {}
 
     if(options) {
-      //console.log("loaded options: " + JSON.stringify(options));
+      console.log("loaded options: " + JSON.stringify(options));
       $('#Background')[0].value = options.Background.replace(/^0x/, '#');
       $('#LocalTime')[0].value = options.LocalTime.replace(/^0x/, '#');
       $('#RemoteTime')[0].value = options.RemoteTime.replace(/^0x/, '#');
       $('#Day')[0].value = options.Day.replace(/^0x/, '#');
       $('#Date')[0].value = options.Date.replace(/^0x/, '#');
+      $('#Data')[0].value = options.Date.replace(/^0x/, '#');
+      if(options.DisplayMode) {
+        $('#DisplayMode').val(options.DisplayMode);
+      }
     }
   }
 
+//// $('#Timezone option[value="'+$('#Timezone').val()+'"]').html(),
+
   function getConfigData() {
     var aTimezone = $('#Timezone').val().split('|');
-
+    var TimezoneOpts = $('#Timezone')[0].options;
     options = {
       "Background": $('#Background').val().replace(/^#/, '0x'),
       "LocalTime": $('#LocalTime').val().replace(/^#/, '0x'),
       "RemoteTime": $('#RemoteTime').val().replace(/^#/, '0x'),
       "Day": $('#Day').val().replace(/^#/, '0x'),
       "Date": $('#Date').val().replace(/^#/, '0x'),
-      "Offset": parseInt(aTimezone[0]),
+      "Data": $('#Data').val().replace(/^#/, '0x'),
+      "Offset": aTimezone[0],
       "Label": aTimezone[1],
-      "TimezoneName": $('#Timezone option[value="'+$('#Timezone').val()+'"]').html()
+      "TimezoneName": $('#Timezone option').not(function(){ return !this.selected }).text(),
+      "DisplayMode": $('#DisplayMode').val()
     };
-    //console.log("saving options: " + JSON.stringify(options));
+    console.log("saving options: " + JSON.stringify(options));
     localStorage['options'] = JSON.stringify(options);
     return options;
   }

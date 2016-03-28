@@ -12,7 +12,8 @@ enum {
 	OFFSET_KEY = 0x5,
   LABEL_KEY = 0x6,
   DISPLAYMODE_KEY = 0x7,
-  DISPLAYDATA_KEY = 0x8
+  DISPLAYDATA_KEY = 0x8,
+  DATA_KEY = 0x9
 };
 
 enum {
@@ -27,6 +28,7 @@ typedef struct AppSettings {
 	GColor RemoteTime;
 	GColor Day;
 	GColor Date;
+  GColor Data;
 	int32_t Offset;
   char Label[6];
   uint8_t DisplayMode;
